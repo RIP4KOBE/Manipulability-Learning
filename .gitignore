@@ -1,0 +1,89 @@
+# 忽略 PyCharm 的 .idea 文件夹
+.idea/
+
+# 忽略 Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 忽略环境配置文件
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# 忽略 Jupyter Notebook 的检查点文件
+.ipynb_checkpoints/
+
+# 忽略单元测试结果
+*.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# 忽略虚拟环境配置
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 忽略日志和调试文件
+*.log
+*.out
+*.err
+
+# 忽略操作系统生成的文件
+.DS_Store
+Thumbs.db
+
+# 忽略 IDE 配置文件
+.vscode/
+*.swp
+*.swo
+
+# 忽略构建文件
+build/
+dist/
+*.egg-info/
+.eggs/
+MANIFEST
+
+# 忽略打包工具生成的文件
+*.wheel
+*.egg
+
+# 忽略临时文件
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.~lock.*
+*.~*
+
+# 忽略 CI/CD 配置缓存
+*.pid
+*.pid.lock
+
+# 忽略其他工具生成的文件
+pytest_cache/
+.tox/
+.mypy_cache/
+.pytest_cache/
+.parso_cache/
+
+# 忽略本地配置文件
+*.local
+*.config
+*.ini
+
+# 忽略 SQLLite 数据库文件
+*.sqlite3
+
+# 忽略 Jupyter 内容
+*.ipynb_checkpoints/
