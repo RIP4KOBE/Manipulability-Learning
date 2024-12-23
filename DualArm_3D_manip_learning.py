@@ -29,7 +29,6 @@ def DualArmManipulabilityLearning():
         'nbVarOut': 3,  # Dimension of the output (symmetric SPD matrices of ME)
         'dt': 1E-1,  # Time step duration
         'params_diagRegFact': 1E-4,  # Regularization of covariance
-        'Kp': 100  # Gain for position control in task space
     }
 
     # Dimension of the output SPD covariance matrices
@@ -38,18 +37,9 @@ def DualArmManipulabilityLearning():
     modelPD['nbVarVec'] = modelPD['nbVar'] - modelPD['nbVarOut'] + modelPD['nbVarOutVec']
     # Dimension of the output SPD covariance matrices
     modelPD['nbVarCovOut'] = modelPD['nbVar'] + modelPD['nbVar'] * (modelPD['nbVar'] - 1) // 2
-
-    # GMM model for Cartesian trajectories
-    modelKin = {
-        'nbStates': 5,  # Number of states in the GMM over 2D Cartesian trajectories
-        'nbVar': 3,  # Number of variables [t,x1,x2]
-        'dt': modelPD['dt']  # Time step duration
-    }
-
     #</editor-fold>
 
     # <editor-fold desc="Create Robots">
-
     # load the URDF files for the left and right arms
     urdf = r"C:\Users\HKCLR_user\PycharmProjects\Manipulaility-Learninng\data\urdf\nova2_robot.urdf"
     left_arm = rtb.robot.ERobot.URDF(urdf)
@@ -72,32 +62,11 @@ def DualArmManipulabilityLearning():
     # check if the URDF files are loaded correctly
     print("left model：", left_arm)
     print("right model：", right_arm)
-
-    # <editor-fold desc="Kinematics testing">
-    # q_left = [np.pi / 4, -np.pi / 6, np.pi / 6, 0.0, -np.pi / 4, np.pi / 3]  # example left arm joint angles
-    # q_right = [-np.pi / 4, np.pi / 6, -np.pi / 6, 0.0, np.pi / 4, -np.pi / 3]  # example right arm joint angles
-    #
-    # # check if the joint angles are valid
-    # assert len(q_left) == left_arm.n, "left arm joint angles number does not match the model"
-    # assert len(q_right) == right_arm.n, "right arm joint angles number does not match the model"
-    #
-    # # Jacobian matrix and forward kinematics calculation testing
-    # J_left = left_arm.jacob0(q_left)  #base frame
-    # T_left = left_arm.fkine(q_left)
-    #
-    # J_right = right_arm.jacob0(q_right)
-    # T_right = right_arm.fkine(q_right)
-    #
-    # print("\nleft arm jacobian：", J_left)
-    # print("\nleft arm EE pose：", T_left)
-    # print("\nright arm jacobian：", J_right)
-    # print("\nright arm EE pose：", T_right)
     # </editor-fold>
 
     #<editor-fold desc="Load Demonstration Data and Generate Bimanual Manipulability Ellipsoids">
     print('Loading demonstration data...')
-    # Load the data
-    data_folder = r"D:\Tem\xtrainer\datasets\manipulability_test_dp_20241211\collect_data" # demonstration data folder
+    data_folder = r"D:\Tem\xtrainer\datasets\manipulability_test_dp_20241211\collect_data"
     trajs = []
 
     for folder_name in os.listdir(data_folder):
@@ -122,78 +91,60 @@ def DualArmManipulabilityLearning():
     for i, trajectory in enumerate(trajs):
         print(f"Trajectory {i + 1}: {len(trajectory)} points")
 
-    nbSamples = len(trajs)  # Number of demonstrations
-    nbData = len(trajs[0])  # Number of data points in a trajectory
-
+    nbSamples = len(trajs)
+    nbData = len(trajs[0])
 
     xIn = np.arange(1, nbData+1) * modelPD['dt']  # Time as input variable
-    X = np.zeros((4, 4, nbData*nbSamples))  # Matrix storing ME Matrices (4x4) and data points for all the demos
+    X = np.zeros((modelPD['nbVar'], modelPD['nbVar'], nbData*nbSamples))  # Matrix storing ME Matrices (3x3) and data points for all the demos
     X[0,0,:] = np.tile(xIn, nbSamples)
 
     Data = []
-    poses_left = []
-    poses_right = []
-    manipulability_matrices = []
-    # s = [{} for _ in range(nbSamples)]
 
     for n in range(nbSamples):
-        # s[n]['Data'] = {'left':[], 'right':[]}
+        poses_left = []
+        poses_right = []
+        manipulability_matrices = []
+
         for t in range(nbData):
-            # extract left and right arm joint angles
             data = trajs[n][t]
-            print("data: ", data['joint_positions'])
             q_left = data.get('joint_positions')[:6]
             q_right = data.get('joint_positions')[8:14]
 
-            # Compute the bimanual relative manipulability ellipsoid
             J_left = left_arm.jacob0(q_left)
             J_right = right_arm.jacob0(q_right)
 
-            # Compute the forward kinematics of the left and right arms
-            # left_arm.q = q_left
-            # T_left = left_arm.fkine(left_arm.link_dict['Link6'])
             T_left = left_arm.fkine(q_left)
             poses_left.append(T_left)
             p_21 = T_left.t  # position vector from left arm ee to base
             R_21 = T_left.R  # rotation matrix from left arm ee to base
             R_24 = R_21 @ R_14  # rotation matrix from left arm ee to right arm ee
 
-            # right_arm.q = q_right
-            # T_right = right_arm.fkine(right_arm.link_dict['Link6'])
             T_right = right_arm.fkine(q_right)
             poses_right.append(T_right)
             p_43 = T_right.inv().t  # position vector from right arm base to right arm ee
             p_13 = p_14 - R_14 @ p_43
             p_23 = p_21 + R_21 @ p_13  # position vector from left arm ee to right arm ee
 
-            JR = compute_bimanual_relative_jacobian(J_left, J_right, R_21, R_24, p_23)
+            JR = compute_bimanual_relative_jacobian(J_left, J_right, R_21, R_24, p_23, task_dim=3, scaling=True)
             manipulability_ellipsoid = compute_bimanual_relative_manipulability(JR, W_rel)
             manipulability_matrices.append(manipulability_ellipsoid)
-            X[1:4, 1:4, t + n * nbData] = manipulability_ellipsoid
+            X[1:modelPD['nbVar'], 1:modelPD['nbVar'], t + n * nbData] = manipulability_ellipsoid
 
-            # s[n]['Data']['left'].append(T_left)
-            # s[n]['Data']['right'].append(T_right)
             xIn_t = np.hstack((xIn[t].reshape(1,1), np.zeros((1, 3))))
             Data.append(np.vstack((xIn_t, T_left, T_right)))
 
-        # visualize the manipulability ellipsoid and trajectory
-        visualize_trajectory_with_ellipsoids(poses_left, poses_right, manipulability_matrices, scale=0.05)
+        # visualize_trajectory_with_ellipsoids(poses_left, poses_right, manipulability_matrices, scale=0.05)
 
-    Data = np.hstack(Data)
+    Data = np.stack(Data, axis=2)
 
       # Combining data from all samples
-    # SPD data in vector shape
-    x = np.zeros((modelPD['nbVarOutVec']+1, nbData*nbSamples))
+    x = np.zeros((modelPD['nbVarVec'], nbData*nbSamples))
     x[0, :] = X[0, 0, :]
     for i in range(nbData*nbSamples):
         x[1:, i] = symmat2vec(X[1:, 1:, i])
     # </editor-fold>
 
     #<editor-fold desc="GMM Learning">
-    # print('Learning GMM1 (2D Cartesian position)...')
-    # modelKin_init = init_GMM_timeBased(Data, modelKin)
-    # modelKin = EM_GMM(Data, modelKin_init)
-
     print('Learning GMM2 (Manipulability ellipsoids)...')
     # Initialization on the manifold
     in_idx = 0
@@ -273,14 +224,8 @@ def DualArmManipulabilityLearning():
     sigma_xd = np.zeros((2, 2, nbData))
 
     for t in range(nbData):
-        # GMR for 2D Cartesian trajectory
-        # xd[:, t], sigma_xd[:, :, t], _ = GMR(modelKin, (t+1) * modelKin['dt'], in_idx, np.arange(1, modelKin['nbVar']))
-        # print("2D Cartesian trajectory GMR finished!")
-
         # GMR for manipulability ellipsoids
         for i in range(modelPD['nbStates']):
-            # Compute activation weight H(i,t): the activation weight of each state i,
-            # indicating the probability that the data point belongs to the ith Gaussian component.
             H[i, t] = modelPD['Priors'][i] * gaussPDF(xIn[:, t] - modelPD['MuMan'][in_idx, i],
                                                       modelPD['Mu'][in_idx, i], modelPD['Sigma'][in_idx, in_idx, i]).item()
         H[:, t] /= np.sum(H[:, t]) + np.finfo(float).eps
@@ -299,47 +244,41 @@ def DualArmManipulabilityLearning():
                 # Transportation of covariance from model.MuMan(outMan,i) to xhat(:,t)
                 S1 = vec2symmat(modelPD['MuMan'][out, i])
                 S2 = vec2symmat(xhat[:, t])
-                Ac = block_diag(1, transp_operator(S1, S2))  #TODO: ValueError: S2 is not a valid SPD matrix
+                Ac = block_diag(1, transp_operator(S1, S2))
 
                 # Parallel transport of eigenvectors
-                vMat = np.zeros((modelPD['nbVarOutVec'], modelPD['nbVarOutVec'], V.shape[1], modelPD['nbStates']))
+                vMat = np.zeros((modelPD['nbVar'], modelPD['nbVar'], V.shape[1], modelPD['nbStates']))
                 pvMat = np.zeros_like(vMat)
                 pV = np.zeros((modelPD['nbVarVec'], modelPD['nbVarVec'], modelPD['nbStates']))
                 pSigma = np.zeros((modelPD['nbVarVec'], modelPD['nbVarVec'], modelPD['nbStates']))
 
                 for j in range(V.shape[1]):
-                    vMat[:, :, j, i] = block_diag(block_diag(V[in_idx, j, i]), vec2symmat(V[out, j, i]))
-                    # pvMat[:, :, j, i] = Ac @ np.sqrt(D[j, j, i]) * vMat[:, :, j, i] @ Ac.T
+                    vMat[:, :, j, i] = block_diag(V[in_idx, j, i], vec2symmat(V[out, j, i]))
 
-                    if np.isscalar(D[j, j, i]):  # 检查 D[j, j, i] 是否为标量
+                    if np.isscalar(D[j, j, i]):
                         D_sqrt = np.sqrt(D[j, j, i])
-                        pvMat[:, :, j, i] = Ac @ (D_sqrt * vMat[:, :, j, i]) @ Ac.T  # 使用标量乘法
+                        pvMat[:, :, j, i] = Ac @ (D_sqrt * vMat[:, :, j, i]) @ Ac.T
                     else:
                         D_sqrt = np.sqrt(D[j, j, i])
-                        pvMat[:, :, j, i] = Ac @ D_sqrt @ vMat[:, :, j, i] @ Ac.T  # 使用矩阵乘法
-
+                        pvMat[:, :, j, i] = Ac @ D_sqrt @ vMat[:, :, j, i] @ Ac.T
 
                     if np.isscalar(pvMat[in_idx, in_idx, j, i]):
-                        pvMat_diag = np.array([pvMat[in_idx, in_idx, j, i]])  # 标量直接使用
+                        input_diag = np.array([pvMat[in_idx, in_idx, j, i]])
                     else:
-                        pvMat_diag = np.diag(pvMat[in_idx, in_idx, j, i])  # 如果是矩阵，提取对角线
+                        input_diag = np.diag(pvMat[in_idx, in_idx, j, i])
                     pV[:, j, i] = np.concatenate(
-                        [pvMat_diag, symmat2vec(pvMat[np.ix_(outMat, outMat, [j], [i])][:, :, 0, 0])])
+                        [input_diag, symmat2vec(pvMat[np.ix_(outMat, outMat, [j], [i])][:, :, 0, 0])])
 
                 # Parallel transported sigma (reconstruction from eigenvectors)
                 pSigma[:, :, i] = pV[:, :, i] @ pV[:, :, i].T
-                # pSigma[:, :, i] = np.outer(pV[:, :, i], pV[:, :, i])
-
 
                 # Gaussian conditioning on the tangent space
                 if np.isscalar(pSigma[in_idx, in_idx, i]):
-                    # 如果是标量，直接取倒数
                     inv_pSigma_in = 1 / pSigma[in_idx, in_idx, i]
-                    uOut[:, i, t] = (logmap_vec(modelPD['MuMan'][out, i], xhat[:, t]).reshape(3, 1) + \
-                                    (pSigma[out, in_idx, i] * inv_pSigma_in).reshape(3, 1) @ \
+                    uOut[:, i, t] = (logmap_vec(modelPD['MuMan'][out, i], xhat[:, t]).reshape(6, 1) + \
+                                    (pSigma[out, in_idx, i] * inv_pSigma_in).reshape(6, 1) @ \
                                     (xIn[:, t] - modelPD['MuMan'][in_idx, i]).reshape(1, 1)).flatten()
                 else:
-                    # 如果是矩阵，使用 np.linalg.inv 计算逆矩阵
                     inv_pSigma_in = np.linalg.inv(pSigma[in_idx, in_idx, i])
                     uOut[:, i, t] = logmap_vec(modelPD['MuMan'][out, i], xhat[:, t]) + \
                                     np.dot(pSigma[out, in_idx, i], inv_pSigma_in) @ \
@@ -349,7 +288,8 @@ def DualArmManipulabilityLearning():
                 uhat[:, t] += uOut[:, i, t] * H[i, t]
 
             # Projection back onto the manifold
-            xhat[:, t] = expmap_vec(uhat[:, t], xhat[:, t]) # TODO: Debug this part to resolve the error "Singular Matrix"
+            xhat[:, t] = expmap_vec(uhat[:, t], xhat[:, t])
+
 
         # Compute conditional covariances
         for i in range(modelPD['nbStates']):
@@ -360,6 +300,8 @@ def DualArmManipulabilityLearning():
 
         expSigma[:, :, t] -= np.outer(uhat[:, t], uhat[:, t])
     print('GMR Regression Completed.')
+
+    return 0
     # </editor-fold>
 
     # <editor-fold desc="Plotting">
@@ -381,19 +323,40 @@ def DualArmManipulabilityLearning():
         ax.grid(False)
 
     clrmap = plt.get_cmap("tab10", nbSamples)
+    catesian_center=np.zeros((2, nbData, nbSamples))
 
     # --- Subplot 1: Plot demonstrations of velocity manipulability ellipsoids ---
     axs[0].set_title('Demonstrations: 2D Cartesian trajectories and manipulability ellipsoids')
     for n in range(nbSamples):
+        catesian_left = Data[1:3, 3, n*nbData:(n+1)*nbData]
+        catesian_right = Data[5:7, 3, n*nbData:(n+1)*nbData]
+
+        # 定义目标范围
+        scale_min, scale_max = -15, 15
+
+        # 缩放左臂数据
+        catesian_left = scale_to_range(catesian_left, scale_min, scale_max)
+
+        # 缩放右臂数据
+        catesian_right = scale_to_range(catesian_right, scale_min, scale_max)
+        catesian_center[:,:,n] = (catesian_left + catesian_right )/ 2
 
         # Plot 2D Cartesian trajectories
-        axs[0].plot(s[n]['Data'][0, :], s[n]['Data'][1, :], color=[0.5, 0.5, 0.5], linewidth=2)
+        if n == 0:  # 只在第一次迭代中添加标签
+            axs[0].plot(catesian_left[0, :], catesian_left[1, :], color='r', linewidth=2, label='Right Arm Trajectory')
+            axs[0].plot(catesian_right[0, :], catesian_right[1, :], color='b', linewidth=2,
+                        label='Left Arm Trajectory')
+        else:
+            axs[0].plot(catesian_left[0, :], catesian_left[1, :], color='r', linewidth=2)
+            axs[0].plot(catesian_right[0, :], catesian_right[1, :], color='b', linewidth=2)
 
-        for t in np.round(np.linspace(0, nbData - 1, 15)).astype(int):
-            mu = np.array([s[n]['Data'][0, t], s[n]['Data'][1, t]]).reshape(2, 1)  # 提取均值
-            # print("mu: ", mu,"shape: ", mu.shape)
+        for t in np.round(np.linspace(0, nbData - 1, 30)).astype(int):
+            mu = np.array([catesian_center[0, t, n], catesian_center[1, t, n]]).reshape(2, 1)  # 提取均值
             sigma = 1E-1 * X[1:3, 1:3, t + n * nbData]  # 缩放后的协方差矩阵
-            plotGMM(mu, sigma, color=clrmap(n), axs=axs[0], valAlpha=0.4,)  # 绘制椭圆
+            plotGMM(mu, sigma, color=clrmap(n), axs=axs[0], valAlpha=0.4, )  # 绘制椭圆
+            # 添加图例
+
+        axs[0].legend(loc='best', fontsize=10)
 
     # --- Subplot 2: Plot GMM means ---
     axs[1].set_title('Manipulability GMM means')
@@ -402,27 +365,30 @@ def DualArmManipulabilityLearning():
 
     # 绘制示教操控性椭圆（灰色，透明度较低）
     for n in range(nbSamples):
-        for t in np.round(np.linspace(0, nbData - 1, 15)).astype(int):
-            mu = np.array([s[n]['Data'][0, t], s[n]['Data'][1, t]]).reshape(2, 1)  # 提取均值
+        for t in np.round(np.linspace(0, nbData - 1, 30)).astype(int):
+            mu = np.array([catesian_center[0, t, n], catesian_center[1, t, n]]).reshape(2, 1)  # 提取均值
             # print("mu: ", mu, "shape: ", mu.shape)
             sigma = 1E-1 * X[1:3, 1:3, t + n * nbData]  # 缩放后的协方差矩阵
             plotGMM(mu, sigma, color=[0.6, 0.6, 0.6], axs=axs[1], valAlpha=0.1, edgeAlpha=0.1)  # 绘制灰色椭圆
 
     # 绘制每个 GMM 状态下的操控性椭圆（彩色，透明度适中）
     for i in range(modelPD['nbStates']):
-        xtmp, _, _ = GMR(modelKin, modelPD['MuMan'][in_idx, i], in_idx, np.arange(1, modelKin['nbVar'])) # GMR regression
-        xtmp = xtmp.reshape(2, 1)  # 将向量转换为矩阵
+        # xtmp, _, _ = GMR(modelKin, modelPD['MuMan'][in_idx, i], in_idx,
+        #                  np.arange(1, modelKin['nbVar']))  # GMR regression
+        # xtmp = xtmp.reshape(2, 1)  # 将向量转换为矩阵
+        mu = np.array([catesian_center[0, t, n], catesian_center[1, t, n]]).reshape(2, 1)  # 提取均值
         sym_sigma = vec2symmat(modelPD['MuMan'][out, i])  # 将向量转换为对称矩阵
-        plotGMM(xtmp, 1E-1 * sym_sigma, color=clrmap(i), axs=axs[1], valAlpha=0.4, edgeAlpha=0.3)  # 绘制彩色椭圆
+        plotGMM(mu, 1E-1 * sym_sigma, color=clrmap(i), axs=axs[1], valAlpha=0.4, edgeAlpha=0.3)  # 绘制彩色椭圆
 
     # --- Subplot 3: Plot desired reproduction ---
     axs[2].set_title('Desired reproduction')
     # 绘制期望操控性椭圆（每隔 5 个时间点绘制一次）
-    for t in range(0, nbData, 5):
+    for t in range(0, nbData, 20):
         # print("xd: ", xd, "shape: ", xd.shape)
-        mu = np.array(xd[:, t]).reshape(2,1)  # 提取期望的均值向量
+        mu = np.array([catesian_center[0, t, n], catesian_center[1, t, n]]).reshape(2, 1)  # 提取均值
         sigma = 5E-2 * vec2symmat(xhat[:, t])  # 缩放后的协方差矩阵
-        plotGMM(mu, sigma, color=[0.2, 0.8, 0.2], axs=axs[2], valAlpha=0.5, linestyle='-.', linewidth=2, edgeAlpha=1)  # 绘制绿色椭圆
+        plotGMM(mu, sigma, color=[0.2, 0.8, 0.2], axs=axs[2], valAlpha=0.5, linestyle='-.', linewidth=2,
+                edgeAlpha=1)  # 绘制绿色椭圆
 
     plt.tight_layout()
     plt.show()
@@ -437,8 +403,6 @@ def DualArmManipulabilityLearning():
             # ax.autoscale(False)
             ax.set_facecolor('white')
             ax.grid(False)
-
-    clrmap = plt.get_cmap('tab10', nbSamples)
 
     # Plot demonstrations of velocity manipulability ellipsoids over time
     axs[0, 0].set_title('Demonstrated manipulability')
@@ -545,6 +509,7 @@ def DualArmManipulabilityLearning():
             ax.plot([x[1, t + n * nbData]], [x[2, t + n * nbData]], [x[3, t + n * nbData] / np.sqrt(2)],
                     '.', markersize=6, color=[0.6, 0.6, 0.6])
 
+    clrmap = plt.get_cmap('tab10', modelPD['nbStates'])
     # Plot GMM ellipsoids
     for i in range(modelPD['nbStates']):
         mu = np.array(modelPD['MuMan'][out, i]).reshape(3,1)  # Extract mean for the current state

@@ -130,13 +130,12 @@ def DualArmManipulabilityLearning():
     X[0,0,:] = np.tile(xIn, nbSamples)
 
     Data = []
-    poses_left = []
-    poses_right = []
-    manipulability_matrices = []
-    # s = [{} for _ in range(nbSamples)]
 
     for n in range(nbSamples):
-        # s[n]['Data'] = {'left':[], 'right':[]}
+        poses_left = []
+        poses_right = []
+        manipulability_matrices = []
+
         for t in range(nbData):
             # extract left and right arm joint angles
             data = trajs[n][t]
@@ -166,7 +165,7 @@ def DualArmManipulabilityLearning():
             p_13 = p_14 - R_14 @ p_43
             p_23 = p_21 + R_21 @ p_13  # position vector from left arm ee to right arm ee
 
-            JR = compute_bimanual_relative_jacobian(J_left, J_right, R_21, R_24, p_23, scaling=True)
+            JR = compute_bimanual_relative_jacobian(J_left, J_right, R_21, R_24, p_23, task_dim=2, scaling=True)
             manipulability_ellipsoid = compute_bimanual_relative_manipulability(JR, W_rel)
             manipulability_matrices.append(manipulability_ellipsoid)
             X[1:3, 1:3, t + n * nbData] = manipulability_ellipsoid
@@ -179,7 +178,9 @@ def DualArmManipulabilityLearning():
         # visualize the manipulability ellipsoid and trajectory
         # visualize_trajectory_with_ellipsoids(poses_left, poses_right, manipulability_matrices, scale=0.05)
 
-    Data = np.hstack(Data)
+    Data = np.stack(Data, axis=2)
+    # vis_scale = 50
+    # Data = Data * vis_scale
 
       # Combining data from all samples
     # SPD data in vector shape
@@ -364,69 +365,93 @@ def DualArmManipulabilityLearning():
 
     # <editor-fold desc="Plotting">
 
-    # #  <editor-fold desc="Plots in Cartesian space">
-    # # Create figure with 3 subplots for Cartesian space
-    # fig, axs = plt.subplots(1, 3, figsize=(18, 6))
-    #
-    # for ax in axs:
-    #     ax.autoscale(False)
-    #     ax.set_xlim([-15, 15])
-    #     ax.set_ylim([-15, 15])
-    #     ax.axhline(-15, color='black', linewidth=1.5, linestyle='-')  # 水平轴
-    #     ax.axvline(-15, color='black', linewidth=2.5, linestyle='-')  # 垂直轴
-    #     ax.set_xlabel(r'$x_1$', fontsize=15)
-    #     ax.set_ylabel(r'$x_2$', fontsize=15)
-    #     ax.set_facecolor('white')
-    #     ax.tick_params(axis='both', which='both', direction='in', length=6, width=1, labelsize=10)
-    #     ax.grid(False)
-    #
-    # clrmap = plt.get_cmap("tab10", nbSamples)
-    #
-    # # --- Subplot 1: Plot demonstrations of velocity manipulability ellipsoids ---
-    # axs[0].set_title('Demonstrations: 2D Cartesian trajectories and manipulability ellipsoids')
-    # for n in range(nbSamples):
-    #
-    #     # Plot 2D Cartesian trajectories
-    #     axs[0].plot(s[n]['Data'][0, :], s[n]['Data'][1, :], color=[0.5, 0.5, 0.5], linewidth=2)
-    #
-    #     for t in np.round(np.linspace(0, nbData - 1, 15)).astype(int):
-    #         mu = np.array([s[n]['Data'][0, t], s[n]['Data'][1, t]]).reshape(2, 1)  # 提取均值
-    #         # print("mu: ", mu,"shape: ", mu.shape)
-    #         sigma = 1E-1 * X[1:3, 1:3, t + n * nbData]  # 缩放后的协方差矩阵
-    #         plotGMM(mu, sigma, color=clrmap(n), axs=axs[0], valAlpha=0.4,)  # 绘制椭圆
-    #
-    # # --- Subplot 2: Plot GMM means ---
-    # axs[1].set_title('Manipulability GMM means')
-    # clrmap = plt.get_cmap('tab10', modelPD['nbStates'])
-    # # sc = 1 / modelPD['dt']
-    #
-    # # 绘制示教操控性椭圆（灰色，透明度较低）
-    # for n in range(nbSamples):
-    #     for t in np.round(np.linspace(0, nbData - 1, 15)).astype(int):
-    #         mu = np.array([s[n]['Data'][0, t], s[n]['Data'][1, t]]).reshape(2, 1)  # 提取均值
-    #         # print("mu: ", mu, "shape: ", mu.shape)
-    #         sigma = 1E-1 * X[1:3, 1:3, t + n * nbData]  # 缩放后的协方差矩阵
-    #         plotGMM(mu, sigma, color=[0.6, 0.6, 0.6], axs=axs[1], valAlpha=0.1, edgeAlpha=0.1)  # 绘制灰色椭圆
-    #
-    # # 绘制每个 GMM 状态下的操控性椭圆（彩色，透明度适中）
-    # for i in range(modelPD['nbStates']):
-    #     xtmp, _, _ = GMR(modelKin, modelPD['MuMan'][in_idx, i], in_idx, np.arange(1, modelKin['nbVar'])) # GMR regression
-    #     xtmp = xtmp.reshape(2, 1)  # 将向量转换为矩阵
-    #     sym_sigma = vec2symmat(modelPD['MuMan'][out, i])  # 将向量转换为对称矩阵
-    #     plotGMM(xtmp, 1E-1 * sym_sigma, color=clrmap(i), axs=axs[1], valAlpha=0.4, edgeAlpha=0.3)  # 绘制彩色椭圆
-    #
-    # # --- Subplot 3: Plot desired reproduction ---
-    # axs[2].set_title('Desired reproduction')
-    # # 绘制期望操控性椭圆（每隔 5 个时间点绘制一次）
-    # for t in range(0, nbData, 5):
-    #     # print("xd: ", xd, "shape: ", xd.shape)
-    #     mu = np.array(xd[:, t]).reshape(2,1)  # 提取期望的均值向量
-    #     sigma = 5E-2 * vec2symmat(xhat[:, t])  # 缩放后的协方差矩阵
-    #     plotGMM(mu, sigma, color=[0.2, 0.8, 0.2], axs=axs[2], valAlpha=0.5, linestyle='-.', linewidth=2, edgeAlpha=1)  # 绘制绿色椭圆
-    #
-    # plt.tight_layout()
-    # plt.show()
-    # # </editor-fold>
+    #  <editor-fold desc="Plots in Cartesian space">
+    # Create figure with 3 subplots for Cartesian space
+    fig, axs = plt.subplots(1, 3, figsize=(18, 6))
+
+    for ax in axs:
+        ax.autoscale(False)
+        ax.set_xlim([-15, 15])
+        ax.set_ylim([-15, 15])
+        ax.axhline(-15, color='black', linewidth=1.5, linestyle='-')  # 水平轴
+        ax.axvline(-15, color='black', linewidth=2.5, linestyle='-')  # 垂直轴
+        ax.set_xlabel(r'$x_1$', fontsize=15)
+        ax.set_ylabel(r'$x_2$', fontsize=15)
+        ax.set_facecolor('white')
+        ax.tick_params(axis='both', which='both', direction='in', length=6, width=1, labelsize=10)
+        ax.grid(False)
+
+    clrmap = plt.get_cmap("tab10", nbSamples)
+    catesian_center=np.zeros((2, nbData, nbSamples))
+
+    # --- Subplot 1: Plot demonstrations of velocity manipulability ellipsoids ---
+    axs[0].set_title('Demonstrations: 2D Cartesian trajectories and manipulability ellipsoids')
+    for n in range(nbSamples):
+        catesian_left = Data[1:3, 3, n*nbData:(n+1)*nbData]
+        catesian_right = Data[5:7, 3, n*nbData:(n+1)*nbData]
+
+        # 定义目标范围
+        scale_min, scale_max = -15, 15
+
+        # 缩放左臂数据
+        catesian_left = scale_to_range(catesian_left, scale_min, scale_max)
+
+        # 缩放右臂数据
+        catesian_right = scale_to_range(catesian_right, scale_min, scale_max)
+        catesian_center[:,:,n] = (catesian_left + catesian_right )/ 2
+
+        # Plot 2D Cartesian trajectories
+        if n == 0:  # 只在第一次迭代中添加标签
+            axs[0].plot(catesian_left[0, :], catesian_left[1, :], color='r', linewidth=2, label='Right Arm Trajectory')
+            axs[0].plot(catesian_right[0, :], catesian_right[1, :], color='b', linewidth=2,
+                        label='Left Arm Trajectory')
+        else:
+            axs[0].plot(catesian_left[0, :], catesian_left[1, :], color='r', linewidth=2)
+            axs[0].plot(catesian_right[0, :], catesian_right[1, :], color='b', linewidth=2)
+
+        for t in np.round(np.linspace(0, nbData - 1, 30)).astype(int):
+            mu = np.array([catesian_center[0, t, n], catesian_center[1, t, n]]).reshape(2, 1)  # 提取均值
+            sigma = 1E-1 * X[1:3, 1:3, t + n * nbData]  # 缩放后的协方差矩阵
+            plotGMM(mu, sigma, color=clrmap(n), axs=axs[0], valAlpha=0.4, )  # 绘制椭圆
+            # 添加图例
+
+        axs[0].legend(loc='best', fontsize=10)
+
+    # --- Subplot 2: Plot GMM means ---
+    axs[1].set_title('Manipulability GMM means')
+    clrmap = plt.get_cmap('tab10', modelPD['nbStates'])
+    # sc = 1 / modelPD['dt']
+
+    # 绘制示教操控性椭圆（灰色，透明度较低）
+    for n in range(nbSamples):
+        for t in np.round(np.linspace(0, nbData - 1, 30)).astype(int):
+            mu = np.array([catesian_center[0, t, n], catesian_center[1, t, n]]).reshape(2, 1)  # 提取均值
+            # print("mu: ", mu, "shape: ", mu.shape)
+            sigma = 1E-1 * X[1:3, 1:3, t + n * nbData]  # 缩放后的协方差矩阵
+            plotGMM(mu, sigma, color=[0.6, 0.6, 0.6], axs=axs[1], valAlpha=0.1, edgeAlpha=0.1)  # 绘制灰色椭圆
+
+    # 绘制每个 GMM 状态下的操控性椭圆（彩色，透明度适中）
+    for i in range(modelPD['nbStates']):
+        # xtmp, _, _ = GMR(modelKin, modelPD['MuMan'][in_idx, i], in_idx,
+        #                  np.arange(1, modelKin['nbVar']))  # GMR regression
+        # xtmp = xtmp.reshape(2, 1)  # 将向量转换为矩阵
+        mu = np.array([catesian_center[0, t, n], catesian_center[1, t, n]]).reshape(2, 1)  # 提取均值
+        sym_sigma = vec2symmat(modelPD['MuMan'][out, i])  # 将向量转换为对称矩阵
+        plotGMM(mu, 1E-1 * sym_sigma, color=clrmap(i), axs=axs[1], valAlpha=0.4, edgeAlpha=0.3)  # 绘制彩色椭圆
+
+    # --- Subplot 3: Plot desired reproduction ---
+    axs[2].set_title('Desired reproduction')
+    # 绘制期望操控性椭圆（每隔 5 个时间点绘制一次）
+    for t in range(0, nbData, 20):
+        # print("xd: ", xd, "shape: ", xd.shape)
+        mu = np.array([catesian_center[0, t, n], catesian_center[1, t, n]]).reshape(2, 1)  # 提取均值
+        sigma = 5E-2 * vec2symmat(xhat[:, t])  # 缩放后的协方差矩阵
+        plotGMM(mu, sigma, color=[0.2, 0.8, 0.2], axs=axs[2], valAlpha=0.5, linestyle='-.', linewidth=2,
+                edgeAlpha=1)  # 绘制绿色椭圆
+
+    plt.tight_layout()
+    plt.show()
+    # </editor-fold>
 
     # <editor-fold desc="Time-based plots">
     fig, axs = plt.subplots(2, 2, figsize=(12, 6), constrained_layout=True)
@@ -437,8 +462,6 @@ def DualArmManipulabilityLearning():
             # ax.autoscale(False)
             ax.set_facecolor('white')
             ax.grid(False)
-
-    clrmap = plt.get_cmap('tab10', nbSamples)
 
     # Plot demonstrations of velocity manipulability ellipsoids over time
     axs[0, 0].set_title('Demonstrated manipulability')
@@ -545,6 +568,7 @@ def DualArmManipulabilityLearning():
             ax.plot([x[1, t + n * nbData]], [x[2, t + n * nbData]], [x[3, t + n * nbData] / np.sqrt(2)],
                     '.', markersize=6, color=[0.6, 0.6, 0.6])
 
+    clrmap = plt.get_cmap('tab10', modelPD['nbStates'])
     # Plot GMM ellipsoids
     for i in range(modelPD['nbStates']):
         mu = np.array(modelPD['MuMan'][out, i]).reshape(3,1)  # Extract mean for the current state

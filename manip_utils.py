@@ -477,8 +477,8 @@ def vec2symmat(v):
             id = np.cumsum(np.flip(np.arange(1, D+1)))
 
             for i in range(D - 1):
-                Mn += np.diag(vn[id[i]:id[i + 1]] / np.sqrt(2), k=i + 1)  # Upper diagonal
-                Mn += np.diag(vn[id[i]:id[i + 1]] / np.sqrt(2), k=-(i + 1))  # Lower diagonal
+                Mn += np.diag(vn[id[i]:id[i+1]] / np.sqrt(2), k=i + 1)  # Upper diagonal
+                Mn += np.diag(vn[id[i]:id[i+1]] / np.sqrt(2), k=-(i + 1))  # Lower diagonal
 
             M[:, :, n] = Mn
 
@@ -900,7 +900,7 @@ def skew_symmetric_matrix(vector):
                      [z, 0, -x],
                      [-y, x, 0]])
 
-def compute_bimanual_relative_jacobian(J_left, J_right, R_21, R_24, p_23, scaling=False):
+def compute_bimanual_relative_jacobian(J_left, J_right, R_21, R_24, p_23, task_dim, scaling=False):
     """
     Compute the relative Jacobian matrix JR.
     """
@@ -914,7 +914,8 @@ def compute_bimanual_relative_jacobian(J_left, J_right, R_21, R_24, p_23, scalin
     omega_24 = np.block([[R_24, np.zeros((3, 3))], [np.zeros((3, 3)), R_24]])
 
     # calculate Jacobian matrices
-    JR = np.block([[-psi @ omega_21 @ J_left, omega_24 @ J_right]])[:2, :] # take only translational part
+    JR = np.block([[-psi @ omega_21 @ J_left, omega_24 @ J_right]])[:task_dim, :]  # take desired task dimension of the Jacobian
+    # JR = np.block([[-psi @ omega_21 @ J_left, omega_24 @ J_right]])[[0, 2], :] # take only xz translational part
 
     if scaling == True:
         # scale the Jacobian matrix
@@ -1058,6 +1059,14 @@ def load_traj(file_path):
     with open(file_path, 'rb') as f:
         data = pickle.load(f)
     return data
+
+
+def scale_to_range(data, new_min, new_max):
+    """将数据缩放到指定范围 [new_min, new_max]"""
+    old_min = np.min(data)
+    old_max = np.max(data)
+    scaled_data = new_min + (data - old_min) * (new_max - new_min) / (old_max - old_min)
+    return scaled_data
 
 
 if __name__ == "__main__":
